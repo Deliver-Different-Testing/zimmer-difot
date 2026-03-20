@@ -196,9 +196,9 @@ function isOnTime(job) {
   if (!job.completedAt) return null;
   const promised = PROMISED[job.speedId];
   if (!promised) return null;
+  // completedAt is now "YYYY-MM-DDThh:mm:ss" using the job date + completion time only
   const compl = new Date(job.completedAt);
-  const jobDate = new Date(job.date + 'T00:00:00');
-  const deadline = new Date(jobDate);
+  const deadline = new Date(job.date + 'T00:00:00');
   deadline.setHours(promised.hour, promised.min, 0, 0);
   return compl <= deadline;
 }
