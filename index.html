@@ -276,7 +276,7 @@ function renderSpeedComparison() {
         <span style="font-size:13px;color:var(--muted)">DIFOT</span>
       </div>
       <div class="sp-row">
-        <div class="sp-item"><span class="sp-val" style="color:var(--blue)">${s.total.toLocaleString()}</span><span class="sp-lbl">Total</span></div>
+        <div class="sp-item"><span class="sp-val" style="color:var(--blue)">${s.total.toLocaleString()}</span><span class="sp-lbl">Deliveries</span></div>
         <div class="sp-item"><span class="sp-val" style="color:var(--green)">${s.onTime.toLocaleString()}</span><span class="sp-lbl">On Time</span></div>
         <div class="sp-item"><span class="sp-val" style="color:var(--red)">${s.late.toLocaleString()}</span><span class="sp-lbl">Late</span></div>
         ${lateCount > 0 ? `<div class="sp-item"><span class="sp-val" style="color:var(--amber)">${avgLateStr}</span><span class="sp-lbl">Avg Late</span></div>` : ''}
@@ -333,7 +333,7 @@ function renderKPIs(data) {
   
   document.getElementById('kpiRow').innerHTML = `
     <div class="kpi ${cls}"><div class="value">${pct.toFixed(1)}%</div><div class="label">DIFOT</div></div>
-    <div class="kpi blue"><div class="value">${total.toLocaleString()}</div><div class="label">Total Jobs</div></div>
+    <div class="kpi blue"><div class="value">${total.toLocaleString()}</div><div class="label">Deliveries</div></div>
     <div class="kpi green"><div class="value">${onTime.toLocaleString()}</div><div class="label">On Time</div></div>
     <div class="kpi red"><div class="value">${late.toLocaleString()}</div><div class="label">Late</div></div>
     ${late > 0 ? `<div class="kpi amber"><div class="value">${avgLateStr}</div><div class="label">Avg Late By</div></div>` : ''}
@@ -485,7 +485,8 @@ function renderAddressTable(data, month, city, day) {
     }
     const ot = isOnTime(j);
     const tag = ot===null?'':ot?'<span class="tag on-time">ON TIME</span>':'<span class="tag late">LATE</span>';
-    html += `<tr><td>${j.jobNumber}</td><td>${j.speed}</td><td>${j.address||'—'}</td>
+    const boxes = j.boxes > 1 ? `<span style="color:var(--muted);font-size:11px"> (${j.boxes} boxes)</span>` : '';
+    html += `<tr><td>${j.jobNumber}${boxes}</td><td>${j.speed}</td><td>${j.address||'—'}</td>
       <td>${pStr}</td><td>${cStr}</td><td>${diffStr}</td><td>${tag}</td></tr>`;
   });
   html += '</tbody></table></div>';
