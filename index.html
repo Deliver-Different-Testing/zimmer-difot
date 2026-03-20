@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DIFOT Report — Urgent Couriers</title>
+<style>
+:root {
+  --navy: #0a1628;
+  --dark: #111827;
+  --card: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --blue: #3b82f6;
+  --cyan: #06b6d4;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--navy); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; min-height:100vh; }
+.header { background:var(--dark); border-bottom:1px solid var(--border); padding:16px 24px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+.header h1 { font-size:20px; font-weight:600; white-space:nowrap; }
+.header .subtitle { color:var(--muted); font-size:14px; }
+.controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-left:auto; }
+.controls select, .controls input { background:var(--card); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:6px; font-size:14px; }
+.controls select:focus, .controls input:focus { outline:none; border-color:var(--blue); }
+.controls input::placeholder { color:var(--muted); }
+
+.container { max-width:1400px; margin:0 auto; padding:20px; }
+
+.kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
+.kpi { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; text-align:center; }
+.kpi .value { font-size:28px; font-weight:700; }
+.kpi .label { font-size:12px; color:var(--muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
+.kpi.green .value { color:var(--green); }
+.kpi.red .value { color:var(--red); }
+.kpi.amber .value { color:var(--amber); }
+.kpi.blue .value { color:var(--blue); }
+
+.breadcrumb { font-size:13px; color:var(--muted); margin-bottom:16px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.breadcrumb span.link { color:var(--cyan); cursor:pointer; text-decoration:underline; }
+.breadcrumb span.link:hover { color:#22d3ee; }
+.breadcrumb span.sep { color:var(--border); }
+
+.chart-container { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:20px; margin-bottom:20px; }
+.chart-title { font-size:15px; font-weight:600; margin-bottom:12px; }
+.bar-chart { display:flex; flex-direction:column; gap:6px; }
+.bar-row { display:flex; align-items:center; gap:10px; font-size:13px; cursor:pointer; padding:4px 8px; border-radius:4px; }
+.bar-row:hover { background:rgba(255,255,255,0.05); }
+.bar-label { width:160px; flex-shrink:0; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bar-track { flex:1; height:24px; background:rgba(255,255,255,0.05); border-radius:4px; position:relative; overflow:hidden; }
+.bar-fill-wrap { display:flex; height:100%; }
+.bar-fill { height:100%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; transition:width 0.3s; }
+.bar-fill.on-time { background:var(--green); border-radius:4px 0 0 4px; }
+.bar-fill.late { background:var(--red); border-radius:0 4px 4px 0; }
+.bar-stats { width:200px; flex-shrink:0; font-size:12px; color:var(--muted); display:flex; gap:12px; }
+.bar-stats .on { color:var(--green); }
+.bar-stats .lt { color:var(--red); }
+
+table { width:100%; border-collapse:collapse; font-size:13px; }
+table th { background:var(--dark); color:var(--muted); text-transform:uppercase; font-size:11px; letter-spacing:0.5px; padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); position:sticky; top:0; }
+table td { padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); }
+table tr:hover { background:rgba(255,255,255,0.03); }
+.tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.tag.on-time { background:rgba(34,197,94,0.15); color:var(--green); }
+.tag.late { background:rgba(239,68,68,0.15); color:var(--red); }
+
+.client-banner { display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px; background:var(--card); border:1px solid var(--border); border-radius:8px; }
+.client-banner .name { font-size:18px; font-weight:600; color:var(--cyan); }
+.client-banner .code { color:var(--muted); font-size:14px; }
+.client-banner .speeds { margin-left:auto; font-size:13px; color:var(--muted); }
+
+.no-data { text-align:center; padding:60px 20px; color:var(--muted); font-size:16px; }
+.loading { text-align:center; padding:60px; color:var(--muted); font-size:15px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📊 DIFOT Report</h1>
+    <div class="subtitle">Delivery In Full On Time — Morning Services</div>
+  </div>
+  <div class="controls">
+    <select id="clientSelect" style="min-width:260px;">
+      <option value="">— Select Client —</option>
+    </select>
+    <select id="speedFilter">
+      <option value="all">All Speeds</option>
+      <option value="165">Morning Express (8am)</option>
+      <option value="164">Morning Delivery (10am)</option>
+    </select>
+  </div>
+</div>
+
+<div class="container">
+  <div id="clientBanner"></div>
+  <div id="kpiRow" class="kpi-row"></div>
+  <div id="breadcrumb" class="breadcrumb"></div>
+  <div id="chartArea"></div>
+  <div id="tableArea"></div>
+</div>
+
+<script>
+const PROMISED = { 165: {name:'Morning Express', hour:8, min:0}, 164: {name:'Morning Delivery', hour:10, min:0} };
+
+let ALL_DATA = {};
+let CLIENTS = [];
+let clientData = [];
+let currentClientId = null;
+let currentSpeed = 'all';
+let drillPath = [];
+
+// Load data
+Promise.all([
+  fetch('clients.json').then(r=>r.json()),
+  fetch('data.json').then(r=>r.json())
+]).then(([clients, data]) => {
+  CLIENTS = clients;
+  ALL_DATA = data;
+  populateClientDropdown();
+  // Default to Zimmer (14927)
+  const sel = document.getElementById('clientSelect');
+  sel.value = '14927';
+  selectClient('14927');
+});
+
+function populateClientDropdown() {
+  const sel = document.getElementById('clientSelect');
+  CLIENTS.sort((a,b) => a.name.localeCompare(b.name)).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.code} — ${c.name} (${c.jobs} jobs)`;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', e => {
+    if (e.target.value) selectClient(e.target.value);
+  });
+  document.getElementById('speedFilter').addEventListener('change', () => {
+    currentSpeed = document.getElementById('speedFilter').value;
+    drillPath = [{level:'all'}];
+    render();
+  });
+}
+
+function selectClient(id) {
+  currentClientId = id;
+  clientData = ALL_DATA[id] || [];
+  currentSpeed = 'all';
+  document.getElementById('speedFilter').value = 'all';
+  drillPath = [{level:'all'}];
+  updateClientBanner();
+  render();
+}
+
+function updateClientBanner() {
+  const el = document.getElementById('clientBanner');
+  if (!clientData.length) { el.innerHTML = '<div class="no-data">No morning delivery jobs found for this client.</div>'; return; }
+  const d = clientData[0];
+  const speeds = [...new Set(clientData.map(j=>j.speed))].join(', ');
+  const dateRange = clientData.map(j=>j.date).sort();
+  el.innerHTML = `<div class="client-banner">
+    <span class="name">${d.clientName}</span>
+    <span class="code">${d.clientCode} — #${d.clientId}</span>
+    <span class="speeds">${speeds} · ${dateRange[0]} to ${dateRange[dateRange.length-1]}</span>
+  </div>`;
+}
+
+function isOnTime(job) {
+  if (!job.completedAt) return null;
+  const promised = PROMISED[job.speedId];
+  if (!promised) return null;
+  const compl = new Date(job.completedAt);
+  const jobDate = new Date(job.date + 'T00:00:00');
+  const deadline = new Date(jobDate);
+  deadline.setHours(promised.hour, promised.min, 0, 0);
+  return compl <= deadline;
+}
+
+function getFiltered() {
+  let d = clientData.filter(j => j.done);
+  if (currentSpeed !== 'all') d = d.filter(j => String(j.speedId) === currentSpeed);
+  return d;
+}
+
+function render() {
+  if (!clientData.length) return;
+  const data = getFiltered();
+  renderKPIs(data);
+  renderBreadcrumb();
+  const level = drillPath[drillPath.length - 1];
+  if (level.level === 'all') renderMonthChart(data);
+  else if (level.level === 'month') renderCityChart(data, level.value);
+  else if (level.level === 'city') renderWeekChart(data, level.month, level.value);
+  else if (level.level === 'week') renderDayChart(data, level.month, level.city, level.value);
+  else if (level.level === 'day') renderAddressTable(data, level.month, level.city, level.value);
+}
+
+function renderKPIs(data) {
+  const total = data.length;
+  const onTime = data.filter(j => isOnTime(j) === true).length;
+  const late = data.filter(j => isOnTime(j) === false).length;
+  const unknown = data.filter(j => isOnTime(j) === null).length;
+  const measured = onTime + late;
+  const pct = measured > 0 ? (onTime / measured * 100) : 0;
+  const cls = pct >= 95 ? 'green' : pct >= 85 ? 'amber' : 'red';
+  
+  // Avg late minutes
+  let totalLateMins = 0;
+  data.forEach(j => {
+    if (isOnTime(j) === false) {
+      const p = PROMISED[j.speedId];
+      const c = new Date(j.completedAt);
+      const dl = new Date(j.date + 'T00:00:00'); dl.setHours(p.hour, p.min);
+      totalLateMins += (c - dl) / 60000;
+    }
+  });
+  const avgLate = late > 0 ? (totalLateMins / late) : 0;
+  const avgLateStr = avgLate >= 60 ? `${(avgLate/60).toFixed(1)}h` : `${avgLate.toFixed(0)}m`;
+  
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi ${cls}"><div class="value">${pct.toFixed(1)}%</div><div class="label">DIFOT</div></div>
+    <div class="kpi blue"><div class="value">${total.toLocaleString()}</div><div class="label">Total Jobs</div></div>
+    <div class="kpi green"><div class="value">${onTime.toLocaleString()}</div><div class="label">On Time</div></div>
+    <div class="kpi red"><div class="value">${late.toLocaleString()}</div><div class="label">Late</div></div>
+    ${late > 0 ? `<div class="kpi amber"><div class="value">${avgLateStr}</div><div class="label">Avg Late By</div></div>` : ''}
+    ${unknown > 0 ? `<div class="kpi"><div class="value" style="color:var(--muted)">${unknown}</div><div class="label">No Timestamp</div></div>` : ''}
+  `;
+}
+
+function renderBreadcrumb() {
+  const el = document.getElementById('breadcrumb');
+  if (drillPath.length <= 1) { el.innerHTML = ''; return; }
+  let html = '';
+  drillPath.forEach((p, i) => {
+    if (i > 0) html += '<span class="sep">›</span>';
+    const label = p.level === 'all' ? 'All Months' : p.label || p.value;
+    if (i < drillPath.length - 1) {
+      html += `<span class="link" onclick="drillTo(${i})">${label}</span>`;
+    } else {
+      html += `<span>${label}</span>`;
+    }
+  });
+  el.innerHTML = html;
+}
+
+function drillTo(index) {
+  drillPath = drillPath.slice(0, index + 1);
+  render();
+}
+
+function calcStats(jobs) {
+  const onTime = jobs.filter(j => isOnTime(j) === true).length;
+  const late = jobs.filter(j => isOnTime(j) === false).length;
+  const measured = onTime + late;
+  return { total:jobs.length, onTime, late, measured, pct: measured > 0 ? (onTime/measured*100) : 0 };
+}
+
+function renderBarChart(title, groups, drillFn) {
+  const maxTotal = Math.max(...groups.map(g => g.stats.measured), 1);
+  let html = `<div class="chart-container"><div class="chart-title">${title}</div><div class="bar-chart">`;
+  groups.forEach(g => {
+    const s = g.stats;
+    const onW = (s.onTime / maxTotal * 100);
+    const lateW = (s.late / maxTotal * 100);
+    html += `<div class="bar-row" onclick="${drillFn}('${g.key.replace(/'/g,"\\'")}')">
+      <div class="bar-label" title="${g.label}">${g.label}</div>
+      <div class="bar-track">
+        <div class="bar-fill-wrap">
+          <div class="bar-fill on-time" style="width:${onW}%">${onW > 10 ? s.pct.toFixed(0)+'%' : ''}</div>
+          <div class="bar-fill late" style="width:${lateW}%"></div>
+        </div>
+      </div>
+      <div class="bar-stats">
+        <span class="on">✓${s.onTime}</span>
+        <span class="lt">✗${s.late}</span>
+        <span>${s.pct.toFixed(1)}%</span>
+        <span style="color:var(--muted)">(n=${s.total})</span>
+      </div>
+    </div>`;
+  });
+  html += '</div></div>';
+  document.getElementById('chartArea').innerHTML = html;
+  document.getElementById('tableArea').innerHTML = '';
+}
+
+// === DRILL LEVELS ===
+
+function renderMonthChart(data) {
+  const byMonth = {};
+  data.forEach(j => { const m = j.date.substring(0,7); (byMonth[m]=byMonth[m]||[]).push(j); });
+  const groups = Object.keys(byMonth).sort().map(m => ({key:m, label:fmtMonth(m), stats:calcStats(byMonth[m])}));
+  renderBarChart('DIFOT by Month', groups, 'drillMonth');
+}
+function drillMonth(m) { drillPath.push({level:'month',value:m,label:fmtMonth(m)}); render(); }
+
+function renderCityChart(data, month) {
+  const jobs = data.filter(j => j.date.startsWith(month));
+  const byCity = {};
+  jobs.forEach(j => { const c=j.city||j.suburb||'Unknown'; (byCity[c]=byCity[c]||[]).push(j); });
+  const groups = Object.entries(byCity).map(([c,js])=>({key:c,label:c,stats:calcStats(js)})).sort((a,b)=>b.stats.total-a.stats.total);
+  renderBarChart(`DIFOT by City — ${fmtMonth(month)}`, groups, 'drillCity');
+}
+function drillCity(city) {
+  const month = drillPath.find(p=>p.level==='month').value;
+  drillPath.push({level:'city',value:city,month,label:city}); render();
+}
+
+function renderWeekChart(data, month, city) {
+  const jobs = data.filter(j => j.date.startsWith(month) && (j.city||j.suburb||'Unknown')===city);
+  const byWeek = {};
+  jobs.forEach(j => {
+    const d=new Date(j.date+'T00:00:00'); const ws=new Date(d); ws.setDate(d.getDate()-((d.getDay()+6)%7));
+    const wk=ws.toISOString().substring(0,10); (byWeek[wk]=byWeek[wk]||[]).push(j);
+  });
+  const groups = Object.keys(byWeek).sort().map(w => {
+    const end=new Date(w+'T00:00:00'); end.setDate(end.getDate()+6);
+    return {key:w, label:`${fmtDate(w)} — ${fmtDate(end.toISOString().substring(0,10))}`, stats:calcStats(byWeek[w])};
+  });
+  renderBarChart(`DIFOT by Week — ${city}, ${fmtMonth(month)}`, groups, 'drillWeek');
+}
+function drillWeek(weekStart) {
+  const m=drillPath.find(p=>p.level==='month').value, c=drillPath.find(p=>p.level==='city').value;
+  drillPath.push({level:'week',value:weekStart,month:m,city:c,label:`Week of ${fmtDate(weekStart)}`}); render();
+}
+
+function renderDayChart(data, month, city, weekStart) {
+  const ws=new Date(weekStart+'T00:00:00'), we=new Date(ws); we.setDate(ws.getDate()+6);
+  const jobs = data.filter(j => { const d=new Date(j.date+'T00:00:00'); return d>=ws && d<=we && (j.city||j.suburb||'Unknown')===city; });
+  const byDay = {};
+  jobs.forEach(j => { (byDay[j.date]=byDay[j.date]||[]).push(j); });
+  const groups = Object.keys(byDay).sort().map(d => ({key:d, label:fmtDayFull(d), stats:calcStats(byDay[d])}));
+  renderBarChart(`DIFOT by Day — ${city}, Week of ${fmtDate(weekStart)}`, groups, 'drillDay');
+}
+function drillDay(day) {
+  const m=drillPath.find(p=>p.level==='month').value, c=drillPath.find(p=>p.level==='city').value;
+  drillPath.push({level:'day',value:day,month:m,city:c,label:fmtDayFull(day)}); render();
+}
+
+function renderAddressTable(data, month, city, day) {
+  const jobs = data.filter(j => j.date===day && (j.city||j.suburb||'Unknown')===city);
+  const byAddr = {};
+  jobs.forEach(j => { const a=j.address||'Unknown'; (byAddr[a]=byAddr[a]||[]).push(j); });
+  const addrGroups = Object.entries(byAddr).map(([a,js])=>({addr:a,stats:calcStats(js),jobs:js})).sort((a,b)=>b.stats.total-a.stats.total);
+
+  let html = `<div class="chart-container"><div class="chart-title">Delivery Addresses — ${city}, ${fmtDayFull(day)}</div>
+  <table><thead><tr><th>Address</th><th>Total</th><th>On Time</th><th>Late</th><th>DIFOT</th></tr></thead><tbody>`;
+  addrGroups.forEach(g => {
+    const cls = g.stats.pct >= 95 ? 'on-time' : 'late';
+    html += `<tr><td>${g.addr}</td><td>${g.stats.total}</td>
+      <td style="color:var(--green)">${g.stats.onTime}</td>
+      <td style="color:var(--red)">${g.stats.late}</td>
+      <td><span class="tag ${cls}">${g.stats.pct.toFixed(1)}%</span></td></tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  html += `<div class="chart-container"><div class="chart-title">Individual Jobs</div>
+  <table><thead><tr><th>Job #</th><th>Speed</th><th>Address</th><th>Promised</th><th>Delivered</th><th>Diff</th><th>Status</th></tr></thead><tbody>`;
+  jobs.sort((a,b)=>(a.completedAt||'').localeCompare(b.completedAt||'')).forEach(j => {
+    const p = PROMISED[j.speedId];
+    const pStr = p ? `${String(p.hour).padStart(2,'0')}:${String(p.min).padStart(2,'0')}` : '—';
+    let cStr = '—', diffStr = '';
+    if (j.completedAt) {
+      const c = new Date(j.completedAt);
+      cStr = c.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit',hour12:false});
+      if (p) {
+        const dl = new Date(j.date+'T00:00:00'); dl.setHours(p.hour,p.min);
+        const diffMin = Math.round((c-dl)/60000);
+        if (diffMin > 0) diffStr = `<span style="color:var(--red)">+${diffMin >= 60 ? (diffMin/60).toFixed(1)+'h' : diffMin+'m'}</span>`;
+        else diffStr = `<span style="color:var(--green)">${diffMin}m</span>`;
+      }
+    }
+    const ot = isOnTime(j);
+    const tag = ot===null?'':ot?'<span class="tag on-time">ON TIME</span>':'<span class="tag late">LATE</span>';
+    html += `<tr><td>${j.jobNumber}</td><td>${j.speed}</td><td>${j.address||'—'}</td>
+      <td>${pStr}</td><td>${cStr}</td><td>${diffStr}</td><td>${tag}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  
+  document.getElementById('chartArea').innerHTML = '';
+  document.getElementById('tableArea').innerHTML = html;
+}
+
+// Formatters
+function fmtMonth(m) { const [y,mo]=m.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo)-1]+' '+y; }
+function fmtDate(d) { return new Date(d+'T00:00:00').toLocaleDateString('en-NZ',{day:'numeric',month:'short'}); }
+function fmtDayFull(d) { return new Date(d+'T00:00:00').toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); }
+</script>
+</body>
+</html>
