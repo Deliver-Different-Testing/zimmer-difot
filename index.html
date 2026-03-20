@@ -66,6 +66,10 @@ table tr:hover { background:rgba(255,255,255,0.03); }
 .tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
 .tag.on-time { background:rgba(34,197,94,0.15); color:var(--green); }
 .tag.late { background:rgba(239,68,68,0.15); color:var(--red); }
+.tag.late-15 { background:rgba(245,158,11,0.15); color:var(--amber); }
+.tag.late-30 { background:rgba(249,115,22,0.15); color:#f97316; }
+.tag.late-60 { background:rgba(239,68,68,0.15); color:var(--red); }
+.tag.late-60p { background:rgba(220,38,38,0.25); color:#dc2626; }
 
 .client-banner { display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px; background:var(--card); border:1px solid var(--border); border-radius:8px; }
 .client-banner .name { font-size:18px; font-weight:600; color:var(--cyan); }
@@ -206,6 +210,38 @@ function isOnTime(job) {
   return compl <= deadline;
 }
 
+function getLateMinutes(job) {
+  if (!job.completedAt) return null;
+  const p = PROMISED[job.speedId];
+  if (!p) return null;
+  const c = new Date(job.completedAt);
+  const dl = new Date(c); dl.setHours(p.hour, p.min, 0, 0);
+  const diff = (c - dl) / 60000;
+  return diff > 0 ? diff : null; // null = on time
+}
+
+function lateGradient(jobs) {
+  let l15=0, l30=0, l60=0, l60p=0;
+  jobs.forEach(j => {
+    const m = getLateMinutes(j);
+    if (m === null) return;
+    if (m <= 15) l15++;
+    else if (m <= 30) l30++;
+    else if (m <= 60) l60++;
+    else l60p++;
+  });
+  return {l15, l30, l60, l60p};
+}
+
+function lateTag(job) {
+  const m = getLateMinutes(job);
+  if (m === null) return '<span class="tag on-time">ON TIME</span>';
+  if (m <= 15) return '<span class="tag late-15">≤15m LATE</span>';
+  if (m <= 30) return '<span class="tag late-30">≤30m LATE</span>';
+  if (m <= 60) return '<span class="tag late-60">≤1h LATE</span>';
+  return '<span class="tag late-60p">&gt;1h LATE</span>';
+}
+
 function getFiltered() {
   let d = clientData.filter(j => j.done);
   if (currentSpeed !== 'all') d = d.filter(j => String(j.speedId) === currentSpeed);
@@ -337,6 +373,16 @@ function renderKPIs(data) {
     <div class="kpi green"><div class="value">${onTime.toLocaleString()}</div><div class="label">On Time</div></div>
     <div class="kpi red"><div class="value">${late.toLocaleString()}</div><div class="label">Late</div></div>
     ${late > 0 ? `<div class="kpi amber"><div class="value">${avgLateStr}</div><div class="label">Avg Late By</div></div>` : ''}
+    ${(() => { const g = lateGradient(data); return late > 0 ? `
+    <div class="kpi" style="text-align:left;padding:12px 16px;">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Late Breakdown</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--amber)">≤ 15 min</span><span style="font-weight:600;color:var(--amber)">${g.l15}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:#f97316">≤ 30 min</span><span style="font-weight:600;color:#f97316">${g.l30}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--red)">≤ 1 hour</span><span style="font-weight:600;color:var(--red)">${g.l60}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:#dc2626">&gt; 1 hour</span><span style="font-weight:600;color:#dc2626">${g.l60p}</span></div>
+      </div>
+    </div>` : ''; })()}
     ${unknown > 0 ? `<div class="kpi"><div class="value" style="color:var(--muted)">${unknown}</div><div class="label">No Timestamp</div></div>` : ''}
   `;
 }
@@ -374,14 +420,21 @@ function renderBarChart(title, groups, drillFn) {
   let html = `<div class="chart-container"><div class="chart-title">${title}</div><div class="bar-chart">`;
   groups.forEach(g => {
     const s = g.stats;
+    const lg = lateGradient(g.jobs);
     const onW = (s.onTime / maxTotal * 100);
-    const lateW = (s.late / maxTotal * 100);
+    const l15W = (lg.l15 / maxTotal * 100);
+    const l30W = (lg.l30 / maxTotal * 100);
+    const l60W = (lg.l60 / maxTotal * 100);
+    const l60pW = (lg.l60p / maxTotal * 100);
     html += `<div class="bar-row" onclick="${drillFn}('${g.key.replace(/'/g,"\\'")}')">
       <div class="bar-label" title="${g.label}">${g.label}</div>
       <div class="bar-track">
         <div class="bar-fill-wrap">
           <div class="bar-fill on-time" style="width:${onW}%">${onW > 10 ? s.pct.toFixed(0)+'%' : ''}</div>
-          <div class="bar-fill late" style="width:${lateW}%"></div>
+          <div style="width:${l15W}%;height:100%;background:var(--amber)"></div>
+          <div style="width:${l30W}%;height:100%;background:#f97316"></div>
+          <div style="width:${l60W}%;height:100%;background:var(--red)"></div>
+          <div style="width:${l60pW}%;height:100%;background:#dc2626;border-radius:0 4px 4px 0"></div>
         </div>
       </div>
       <div class="bar-stats">
@@ -402,7 +455,7 @@ function renderBarChart(title, groups, drillFn) {
 function renderMonthChart(data) {
   const byMonth = {};
   data.forEach(j => { const m = j.date.substring(0,7); (byMonth[m]=byMonth[m]||[]).push(j); });
-  const groups = Object.keys(byMonth).sort().map(m => ({key:m, label:fmtMonth(m), stats:calcStats(byMonth[m])}));
+  const groups = Object.keys(byMonth).sort().map(m => ({key:m, label:fmtMonth(m), stats:calcStats(byMonth[m]), jobs:byMonth[m]}));
   renderBarChart('DIFOT by Month', groups, 'drillMonth');
 }
 function drillMonth(m) { drillPath.push({level:'month',value:m,label:fmtMonth(m)}); render(); }
@@ -411,7 +464,7 @@ function renderCityChart(data, month) {
   const jobs = data.filter(j => j.date.startsWith(month));
   const byCity = {};
   jobs.forEach(j => { const c=j.city||j.suburb||'Unknown'; (byCity[c]=byCity[c]||[]).push(j); });
-  const groups = Object.entries(byCity).map(([c,js])=>({key:c,label:c,stats:calcStats(js)})).sort((a,b)=>b.stats.total-a.stats.total);
+  const groups = Object.entries(byCity).map(([c,js])=>({key:c,label:c,stats:calcStats(js),jobs:js})).sort((a,b)=>b.stats.total-a.stats.total);
   renderBarChart(`DIFOT by City — ${fmtMonth(month)}`, groups, 'drillCity');
 }
 function drillCity(city) {
@@ -428,7 +481,7 @@ function renderWeekChart(data, month, city) {
   });
   const groups = Object.keys(byWeek).sort().map(w => {
     const end=new Date(w+'T00:00:00'); end.setDate(end.getDate()+6);
-    return {key:w, label:`${fmtDate(w)} — ${fmtDate(end.toISOString().substring(0,10))}`, stats:calcStats(byWeek[w])};
+    return {key:w, label:`${fmtDate(w)} — ${fmtDate(end.toISOString().substring(0,10))}`, stats:calcStats(byWeek[w]), jobs:byWeek[w]};
   });
   renderBarChart(`DIFOT by Week — ${city}, ${fmtMonth(month)}`, groups, 'drillWeek');
 }
@@ -442,7 +495,7 @@ function renderDayChart(data, month, city, weekStart) {
   const jobs = data.filter(j => { const d=new Date(j.date+'T00:00:00'); return d>=ws && d<=we && (j.city||j.suburb||'Unknown')===city; });
   const byDay = {};
   jobs.forEach(j => { (byDay[j.date]=byDay[j.date]||[]).push(j); });
-  const groups = Object.keys(byDay).sort().map(d => ({key:d, label:fmtDayFull(d), stats:calcStats(byDay[d])}));
+  const groups = Object.keys(byDay).sort().map(d => ({key:d, label:fmtDayFull(d), stats:calcStats(byDay[d]), jobs:byDay[d]}));
   renderBarChart(`DIFOT by Day — ${city}, Week of ${fmtDate(weekStart)}`, groups, 'drillDay');
 }
 function drillDay(day) {
@@ -460,9 +513,11 @@ function renderAddressTable(data, month, city, day) {
   <table><thead><tr><th>Address</th><th>Total</th><th>On Time</th><th>Late</th><th>DIFOT</th></tr></thead><tbody>`;
   addrGroups.forEach(g => {
     const cls = g.stats.pct >= 95 ? 'on-time' : 'late';
+    const lg = lateGradient(g.jobs);
+    const lateDetail = g.stats.late > 0 ? `<span style="font-size:11px;color:var(--muted);margin-left:6px">(${lg.l15?'≤15m:'+lg.l15+' ':''}${lg.l30?'≤30m:'+lg.l30+' ':''}${lg.l60?'≤1h:'+lg.l60+' ':''}${lg.l60p?'>1h:'+lg.l60p:''})</span>` : '';
     html += `<tr><td>${g.addr}</td><td>${g.stats.total}</td>
       <td style="color:var(--green)">${g.stats.onTime}</td>
-      <td style="color:var(--red)">${g.stats.late}</td>
+      <td style="color:var(--red)">${g.stats.late}${lateDetail}</td>
       <td><span class="tag ${cls}">${g.stats.pct.toFixed(1)}%</span></td></tr>`;
   });
   html += '</tbody></table></div>';
@@ -483,8 +538,7 @@ function renderAddressTable(data, month, city, day) {
         else diffStr = `<span style="color:var(--green)">${diffMin}m</span>`;
       }
     }
-    const ot = isOnTime(j);
-    const tag = ot===null?'':ot?'<span class="tag on-time">ON TIME</span>':'<span class="tag late">LATE</span>';
+    const tag = j.completedAt ? lateTag(j) : '';
     const boxes = j.boxes > 1 ? `<span style="color:var(--muted);font-size:11px"> (${j.boxes} boxes)</span>` : '';
     html += `<tr><td>${j.jobNumber}${boxes}</td><td>${j.speed}</td><td>${j.address||'—'}</td>
       <td>${pStr}</td><td>${cStr}</td><td>${diffStr}</td><td>${tag}</td></tr>`;
