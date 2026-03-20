@@ -196,9 +196,12 @@ function isOnTime(job) {
   if (!job.completedAt) return null;
   const promised = PROMISED[job.speedId];
   if (!promised) return null;
-  // completedAt is now "YYYY-MM-DDThh:mm:ss" using the job date + completion time only
+  // completedAt = "YYYY-MM-DDThh:mm:ss" using actual delivery date + time
+  // DIFOT = was it delivered before promised time on the day it was ACTUALLY delivered
+  // (ignore booking date — clients book days in advance)
   const compl = new Date(job.completedAt);
-  const deadline = new Date(job.date + 'T00:00:00');
+  // Deadline = promised hour on the actual delivery date (same date as completedAt)
+  const deadline = new Date(compl);
   deadline.setHours(promised.hour, promised.min, 0, 0);
   return compl <= deadline;
 }
@@ -253,7 +256,7 @@ function renderSpeedComparison() {
       if (isOnTime(j) === false) {
         const p = PROMISED[j.speedId];
         const c = new Date(j.completedAt);
-        const dl = new Date(j.date+'T00:00:00'); dl.setHours(p.hour,p.min);
+        const dl = new Date(c); dl.setHours(p.hour,p.min,0,0);
         totalLateMins += (c-dl)/60000; lateCount++;
       }
     });
@@ -321,7 +324,7 @@ function renderKPIs(data) {
     if (isOnTime(j) === false) {
       const p = PROMISED[j.speedId];
       const c = new Date(j.completedAt);
-      const dl = new Date(j.date + 'T00:00:00'); dl.setHours(p.hour, p.min);
+      const dl = new Date(c); dl.setHours(p.hour, p.min, 0, 0);
       totalLateMins += (c - dl) / 60000;
     }
   });
@@ -474,7 +477,7 @@ function renderAddressTable(data, month, city, day) {
       const c = new Date(j.completedAt);
       cStr = c.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit',hour12:false});
       if (p) {
-        const dl = new Date(j.date+'T00:00:00'); dl.setHours(p.hour,p.min);
+        const dl = new Date(c); dl.setHours(p.hour,p.min,0,0);
         const diffMin = Math.round((c-dl)/60000);
         if (diffMin > 0) diffStr = `<span style="color:var(--red)">+${diffMin >= 60 ? (diffMin/60).toFixed(1)+'h' : diffMin+'m'}</span>`;
         else diffStr = `<span style="color:var(--green)">${diffMin}m</span>`;
