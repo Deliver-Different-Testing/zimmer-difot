@@ -74,6 +74,29 @@ table tr:hover { background:rgba(255,255,255,0.03); }
 
 .no-data { text-align:center; padding:60px 20px; color:var(--muted); font-size:16px; }
 .loading { text-align:center; padding:60px; color:var(--muted); font-size:15px; }
+
+.speed-compare { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
+@media (max-width:800px) { .speed-compare { grid-template-columns:1fr; } }
+.speed-panel { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px 20px; cursor:pointer; transition:border-color 0.2s; }
+.speed-panel:hover { border-color:var(--blue); }
+.speed-panel.active { border-color:var(--cyan); border-width:2px; }
+.speed-panel .sp-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.speed-panel .sp-name { font-size:16px; font-weight:600; }
+.speed-panel .sp-promised { font-size:13px; color:var(--muted); }
+.speed-panel .sp-difot { font-size:36px; font-weight:700; }
+.speed-panel .sp-row { display:flex; gap:16px; margin-top:8px; font-size:13px; }
+.speed-panel .sp-row .sp-item { display:flex; flex-direction:column; align-items:center; }
+.speed-panel .sp-row .sp-val { font-weight:600; font-size:15px; }
+.speed-panel .sp-row .sp-lbl { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.3px; }
+.speed-panel .sp-bar { height:8px; border-radius:4px; background:rgba(255,255,255,0.05); margin-top:12px; overflow:hidden; display:flex; }
+.speed-panel .sp-bar-fill { height:100%; }
+.speed-panel .sp-bar-fill.on { background:var(--green); }
+.speed-panel .sp-bar-fill.lt { background:var(--red); }
+.speed-panel .sp-trend { margin-top:10px; font-size:11px; color:var(--muted); display:flex; gap:6px; flex-wrap:wrap; }
+.speed-panel .sp-trend .mo { padding:2px 6px; border-radius:3px; font-weight:600; }
+.speed-panel .sp-trend .mo.g { background:rgba(34,197,94,0.15); color:var(--green); }
+.speed-panel .sp-trend .mo.r { background:rgba(239,68,68,0.15); color:var(--red); }
+.speed-panel .sp-trend .mo.a { background:rgba(245,158,11,0.15); color:var(--amber); }
 </style>
 </head>
 <body>
@@ -98,6 +121,7 @@ table tr:hover { background:rgba(255,255,255,0.03); }
 <div class="container">
   <div id="clientBanner"></div>
   <div id="kpiRow" class="kpi-row"></div>
+  <div id="speedComparison"></div>
   <div id="breadcrumb" class="breadcrumb"></div>
   <div id="chartArea"></div>
   <div id="tableArea"></div>
@@ -189,6 +213,7 @@ function render() {
   if (!clientData.length) return;
   const data = getFiltered();
   renderKPIs(data);
+  renderSpeedComparison();
   renderBreadcrumb();
   const level = drillPath[drillPath.length - 1];
   if (level.level === 'all') renderMonthChart(data);
@@ -196,6 +221,89 @@ function render() {
   else if (level.level === 'city') renderWeekChart(data, level.month, level.value);
   else if (level.level === 'week') renderDayChart(data, level.month, level.city, level.value);
   else if (level.level === 'day') renderAddressTable(data, level.month, level.city, level.value);
+}
+
+function renderSpeedComparison() {
+  const el = document.getElementById('speedComparison');
+  // Only show at top level
+  if (drillPath.length > 1 && drillPath[drillPath.length-1].level !== 'all') { el.innerHTML=''; return; }
+  
+  const allDone = clientData.filter(j => j.done);
+  const speeds = [
+    {id:165, name:'Morning Express', promised:'8:00 AM'},
+    {id:164, name:'Morning Delivery', promised:'10:00 AM'}
+  ];
+  
+  let html = '<div class="speed-compare">';
+  speeds.forEach(sp => {
+    const jobs = allDone.filter(j => j.speedId === sp.id);
+    if (!jobs.length) return;
+    const s = calcStats(jobs);
+    const cls = s.pct >= 95 ? 'green' : s.pct >= 85 ? 'amber' : 'red';
+    const active = currentSpeed === String(sp.id) ? ' active' : '';
+    
+    // Monthly trend (last 6 months)
+    const byMonth = {};
+    jobs.forEach(j => { const m=j.date.substring(0,7); (byMonth[m]=byMonth[m]||[]).push(j); });
+    const months = Object.keys(byMonth).sort().slice(-6);
+    
+    // Avg late
+    let totalLateMins = 0, lateCount = 0;
+    jobs.forEach(j => {
+      if (isOnTime(j) === false) {
+        const p = PROMISED[j.speedId];
+        const c = new Date(j.completedAt);
+        const dl = new Date(j.date+'T00:00:00'); dl.setHours(p.hour,p.min);
+        totalLateMins += (c-dl)/60000; lateCount++;
+      }
+    });
+    const avgLate = lateCount > 0 ? totalLateMins/lateCount : 0;
+    const avgLateStr = avgLate >= 60 ? `${(avgLate/60).toFixed(1)}h` : `${avgLate.toFixed(0)}m`;
+    
+    const onPct = s.measured > 0 ? (s.onTime/s.measured*100) : 0;
+    const ltPct = s.measured > 0 ? (s.late/s.measured*100) : 0;
+    
+    html += `<div class="speed-panel${active}" onclick="filterSpeed('${sp.id}')">
+      <div class="sp-header">
+        <span class="sp-name">${sp.name}</span>
+        <span class="sp-promised">Promised by ${sp.promised}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:12px;">
+        <span class="sp-difot" style="color:var(--${cls})">${s.pct.toFixed(1)}%</span>
+        <span style="font-size:13px;color:var(--muted)">DIFOT</span>
+      </div>
+      <div class="sp-row">
+        <div class="sp-item"><span class="sp-val" style="color:var(--blue)">${s.total.toLocaleString()}</span><span class="sp-lbl">Total</span></div>
+        <div class="sp-item"><span class="sp-val" style="color:var(--green)">${s.onTime.toLocaleString()}</span><span class="sp-lbl">On Time</span></div>
+        <div class="sp-item"><span class="sp-val" style="color:var(--red)">${s.late.toLocaleString()}</span><span class="sp-lbl">Late</span></div>
+        ${lateCount > 0 ? `<div class="sp-item"><span class="sp-val" style="color:var(--amber)">${avgLateStr}</span><span class="sp-lbl">Avg Late</span></div>` : ''}
+      </div>
+      <div class="sp-bar">
+        <div class="sp-bar-fill on" style="width:${onPct}%"></div>
+        <div class="sp-bar-fill lt" style="width:${ltPct}%"></div>
+      </div>
+      <div class="sp-trend">
+        ${months.map(m => {
+          const ms = calcStats(byMonth[m]);
+          const mc = ms.pct >= 95 ? 'g' : ms.pct >= 85 ? 'a' : 'r';
+          return `<span class="mo ${mc}" title="${fmtMonth(m)}: ${ms.onTime}/${ms.measured}">${fmtMonth(m).substring(0,3)} ${ms.pct.toFixed(0)}%</span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function filterSpeed(id) {
+  const sel = document.getElementById('speedFilter');
+  if (currentSpeed === String(id)) {
+    currentSpeed = 'all'; sel.value = 'all';
+  } else {
+    currentSpeed = String(id); sel.value = String(id);
+  }
+  drillPath = [{level:'all'}];
+  render();
 }
 
 function renderKPIs(data) {
