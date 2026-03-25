@@ -89,6 +89,8 @@ def main():
 
         speed_name = speeds.get(r['ucjbSpeed'], f"Speed {r['ucjbSpeed']}")
         to_addr = r['ucjbToAddr'] or ''
+        # Extract hospital/location name (first part before comma)
+        city = to_addr.split(',')[0].strip() if to_addr else f"Location {r['ucjbTo']}"
         suburb = to_addr.split(',')[-1].strip() if ',' in to_addr else ''
 
         def fmt(dt):
@@ -105,8 +107,8 @@ def main():
             'completedAt': fmt(actual_compl),
             'completedAtSource': 'child_del' if child_data else 'parent',
             'parentComplTime': fmt(r['ucjbComplTime']),
-            'city': r['ucjbTo'] or '',
-            'address': r['ucjbTo'] or '',
+            'city': city,
+            'address': to_addr,
             'suburb': suburb,
             'status': 'Completed',
             'done': True,
