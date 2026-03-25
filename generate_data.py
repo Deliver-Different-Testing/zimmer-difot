@@ -4,9 +4,9 @@ Generate Zimmer DIFOT dashboard data.
 
 Rules:
 - Count = parent jobs (rel 19) — one row per parent
-- DIFOT measured using earliest child DEL (rel 20) completion time
+- DIFOT measured using PARENT ucjbComplTime (the actual delivery time for morning services)
 - Only Morning Delivery (speed 164, deadline 10am) and Morning Express (speed 165, deadline 8am)
-- If no child DEL exists, fall back to parent's own ucjbComplTime
+- Site name from: ucjbTo → tucSuburb.ucsuID → tucSuburb.SiteID → tblSite.Name
 """
 import pymssql
 import json
@@ -24,21 +24,17 @@ def main():
     conn = pymssql.connect(**DB_CONFIG)
     cur = conn.cursor(as_dict=True)
 
-    # Step 1: Get earliest child DEL completion times grouped by parent
-    print("Fetching child DEL completion times...")
+    # Step 1: Build site lookup: suburb ID → site name
+    print("Building site lookup...")
     cur.execute("""
-        SELECT ParentID, MIN(ucjbComplTime) as childComplTime, COUNT(*) as childCount
-        FROM tucJobArchive
-        WHERE ucjbClientCode = 'ZIMME' AND ParentID != ucjbID AND ucjbComplTime IS NOT NULL
-          AND ucjbDate >= DATEADD(MONTH, -12, GETDATE())
-        GROUP BY ParentID
+        SELECT s.ucsuID, si.Name as siteName
+        FROM tucSuburb s
+        JOIN tblSite si ON s.SiteID = si.SiteID
     """)
-    child_map = {}
-    for r in cur.fetchall():
-        child_map[r['ParentID']] = (r['childComplTime'], r['childCount'])
-    print(f"  Found {len(child_map)} parents with children")
+    site_map = {r['ucsuID']: r['siteName'] for r in cur.fetchall()}
+    print(f"  {len(site_map)} suburbs mapped to sites")
 
-    # Step 2: Get parent jobs — ONLY speed 164 and 165
+    # Step 2: Get parent jobs — only speed 164 and 165
     print("Fetching Morning Delivery/Express parent jobs...")
     cur.execute("""
         SELECT 
@@ -57,7 +53,7 @@ def main():
         ORDER BY ucjbDate DESC
     """)
     rows = cur.fetchall()
-    print(f"  Found {len(rows)} parent jobs (164+165 only)")
+    print(f"  Found {len(rows)} parent jobs")
 
     # Step 3: Speed definitions
     cur.execute("SELECT ucjtID, ucjtName FROM tucJobType WHERE ucjtID IN (164, 165)")
@@ -68,30 +64,16 @@ def main():
     client = cur.fetchone()
     client_name = client['ucclName'] if client else 'Zimmer Biomet'
 
-    # Step 5: Build jobs — one row per PARENT, completedAt from child DEL
+    # Step 5: Build jobs — parent completion time for DIFOT
     jobs = []
-    child_used = 0
-    parent_used = 0
-    
     for r in rows:
-        child_data = child_map.get(r['ucjbID'])
-        if child_data:
-            actual_compl = child_data[0]
-            child_count = child_data[1]
-            child_used += 1
-        else:
-            actual_compl = r['ucjbComplTime']
-            child_count = 0
-            parent_used += 1
-        
-        if not actual_compl:
+        if not r['ucjbComplTime']:
             continue
 
         speed_name = speeds.get(r['ucjbSpeed'], f"Speed {r['ucjbSpeed']}")
+        suburb_id = r['ucjbTo']
+        site_name = site_map.get(suburb_id, f"Unknown ({suburb_id})")
         to_addr = r['ucjbToAddr'] or ''
-        # Extract hospital/location name (first part before comma)
-        city = to_addr.split(',')[0].strip() if to_addr else f"Location {r['ucjbTo']}"
-        suburb = to_addr.split(',')[-1].strip() if ',' in to_addr else ''
 
         def fmt(dt):
             if isinstance(dt, datetime):
@@ -104,24 +86,16 @@ def main():
             'date': fmt(r['ucjbDate'])[:10],
             'speedId': r['ucjbSpeed'],
             'speed': speed_name,
-            'completedAt': fmt(actual_compl),
-            'completedAtSource': 'child_del' if child_data else 'parent',
-            'parentComplTime': fmt(r['ucjbComplTime']),
-            'city': city,
+            'completedAt': fmt(r['ucjbComplTime']),
+            'city': site_name,
             'address': to_addr,
-            'suburb': suburb,
             'status': 'Completed',
             'done': True,
             'clientId': r['ucjbClientID'],
             'clientCode': r['ucjbClientCode'],
             'clientName': client_name,
             'boxes': r['ucjbQty'] or 0,
-            'childCount': child_count
         })
-
-    total = child_used + parent_used
-    print(f"\nUsing child DEL time: {child_used} ({child_used*100//total if total else 0}%)")
-    print(f"Using parent time (no children): {parent_used}")
 
     output = {'14927': jobs}
     with open('/data/.openclaw/workspace/zimmer-difot/data.json', 'w') as f:
@@ -137,6 +111,16 @@ def main():
         json.dump(clients, f)
     
     print(f"Saved {len(jobs)} parent jobs to data.json")
+
+    # Quick DIFOT check
+    on_time = 0
+    for j in jobs:
+        ct = datetime.fromisoformat(j['completedAt'])
+        deadline = 8 if j['speedId'] == 165 else 10
+        if ct.hour < deadline:
+            on_time += 1
+    print(f"DIFOT check: {on_time}/{len(jobs)} = {on_time*100//len(jobs)}%")
+
     conn.close()
 
 if __name__ == '__main__':
